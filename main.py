@@ -4,6 +4,7 @@ from typing import re
 import re
 import time
 import sqlite3
+import json
 from sqlite3 import Error
 from datetime import datetime
 
@@ -174,13 +175,18 @@ def clearArrays():
     status1.clear()
 
 def main():
+    serverToken = 'Server Token'
+    deviceToken = 'Device Token'
+    headers = {
+        'Content-Type': 'application/json',
+        'Authorization': 'key=' + serverToken,
+    }
     previousText = parseSite()
     #   Create Table and Connection
     conn = create_connection()
     cur = conn.cursor()
     createTable(cur)
     lastRowNum = getSizeDB(cur)
-
     #   if no database is set
     if lastRowNum == None:
         parseText(previousText)
@@ -188,45 +194,50 @@ def main():
         clearArrays()
     else:
         lastRowNum += 1
-
     while True:
         print("STARTED!")
         time.sleep(30)
         currentText = parseSite()
-
         if previousText != currentText:
             parseText(currentText)
-            print("Text is changed!")
-
+            #   print("Text is changed!")
             #   CHECKS IF THERE ARE ANY NEW ENTRY
             #   IF YES, ADDS THAT ENTRY TO DATABASE
             for i in range(len(date)):
                 cur.execute("SELECT * FROM records WHERE EDATE=? AND PLACE=?;", (date[i], place[i]))
                 list3 = cur.fetchall()
-
                 if len(list3) == 0:
                     lastRowNum = addEntry(cur, conn, lastRowNum, date[i], latitude[i], longitude[i], depth[i],
                                           mD[i], mL[i], mw[i],place[i], status1[i])
-                    printDB(cur)
-
+                    body = {
+                        'notification': {'title': 'New Earthquake',
+                                         'body': 'Earthquake at ' + date[i] + '\nPlace: ' + place[i]
+                                                 + '\nMagnititude: ' + mL[i]
+                                         },
+                        'to':
+                            deviceToken,
+                        'priority': 'high',
+                    } # Enter deviceToken here
+                    response = requests.post("https://fcm.googleapis.com/fcm/send", headers,
+                                             json.dumps(body))
+                    print(response.status_code)
+                    print(response.json())
+                    #printDB(cur)
             #   CHECKS IF THERE ARE ANY STATUS CHANGE
             #   IF YES, UPDATES THE STATUS OF THAT ENTRY
             for i in range(len(date)):
                 list3 = cur.execute("SELECT STATUS FROM records WHERE EDATE=? AND PLACE=?;", (date[i], place[i],))
                 list3 = cur.fetchall()
-
                 for statusEntry in list3:
                     if statusEntry != status1[i]:
                         print("Status changed!")
                         cur.execute("UPDATE records set STATUS=? where EDATE=? AND PLACE=?;",
                                     (status1[i], date[i], place[i]))
                         conn.commit()
-                        printDB(cur)
+                        #printDB(cur)
                         break
-
         clearArrays()
         previousText = currentText
-    closeConn(cur)
 
 if __name__ == '__main__':
     main()
